@@ -1,0 +1,76 @@
+# This file defines the main CI/CD pipeline for the GitHub Repository Crawler.
+# It automates the entire process of setting up the environment, running the crawl,
+# and saving the results, directly following the requirements from the assignment PDF.
+
+name: GitHub Repository Crawler
+
+# Trigger the workflow on a push to the main branch or when manually run.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  crawl:
+    # Run the job on the latest version of Ubuntu provided by GitHub.
+    runs-on: ubuntu-latest
+    
+    # Requirement 1: A postgres service container.
+    # This block creates a containerized PostgreSQL database that the job can connect to.
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: github_repos
+        ports:
+          - 5432:5432
+        # Health check to ensure the database is ready before proceeding.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    # Requirement 2: Steps for setup & dependency installs.
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Python dependencies
+      run: pip install -r requirements.txt
+
+    # Requirement 3: A setup-postgres step that creates tables.
+    - name: Setup database schema
+      run: PGPASSWORD=password psql -h localhost -U postgres -d github_repos -p 5432 -f scripts/setup_db.sql
+
+    # Requirement 4: A crawl-stars step that obtains 100,000 repositories.
+    - name: Run crawler to fetch stars
+      run: python src/crawler.py
+      env:
+        # Requirement 6: Use the default GitHub Token without needing admin privileges.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Environment variables for the Python script to connect to the postgres service.
+        DB_HOST: localhost
+        DB_NAME: github_repos
+        DB_USER: postgres
+        DB_PASSWORD: password
+        DB_PORT: 5432
+
+    # Requirement 5: Dump contents and upload the result as an artifact.
+    - name: Dump database to CSV
+      run: |
+        PGPASSWORD=password psql -h localhost -U postgres -d github_repos -p 5432 --command="\copy (SELECT * FROM github_data.repositories ORDER BY stargazer_count DESC) TO 'repo_stars.csv' WITH CSV HEADER;"
+
+    - name: Upload results as an artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: repository-stars-report
+        path: repo_stars.csv
+
