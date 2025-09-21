@@ -6,7 +6,6 @@ from psycopg2.extras import execute_values
 from dotenv import load_dotenv
 from datetime import date, timedelta
 
-# Load environment variables from a .env file for local development.
 load_dotenv()
 
 # --- Configuration ---
@@ -57,8 +56,7 @@ def fetch_repos_for_query(search_query, limit_per_query=1000):
     has_next_page = True
     after_cursor = None
     
-    # **FIX 1: Initialize 'remaining' to a safe default value.**
-    # This prevents the UnboundLocalError if an API call fails before it's set.
+
     remaining = 5000 
     
     formatted_query = QUERY_TEMPLATE % search_query
